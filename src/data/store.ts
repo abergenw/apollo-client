@@ -131,8 +131,8 @@ export function data(
       return newState;
     }
   } else if (isMutationResultAction(constAction)) {
-    // Incorporate the result from this mutation into the store
-    if (!constAction.result.errors) {
+    // Incorporate the result from this mutation into the store unless the mutation is set to reset the whole store
+    if (!constAction.result.errors && !constAction.resetStore) {
       const queryStoreValue = mutations[constAction.mutationId];
 
       // XXX use immutablejs instead of cloning
