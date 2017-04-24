@@ -181,6 +181,10 @@ describe('client', () => {
         apollo: {
           queries: {},
           mutations: {},
+          cache: {
+            data: {},
+            queryCache: {}
+          },
           data: {},
           optimistic: [],
           reducerError: null,
@@ -391,6 +395,10 @@ describe('client', () => {
     };
 
     const finalState = { apollo: assign({}, initialState.apollo, {
+      cache: {
+        data: initialState.apollo.data,
+        queryCache: {},
+      },
       queries: {
         '1': {
           queryString: print(query),

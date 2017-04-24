@@ -114,6 +114,15 @@ export function graphQLResultHasError(result: ExecutionResult) {
   return result.errors && result.errors.length;
 }
 
+export interface Cache {
+  data: NormalizedCache;
+  queryCache: QueryCache;
+}
+
+export interface QueryCache {
+  [queryId: string]: {};
+}
+
 /**
  * This is a normalized representation of the Apollo query result cache. Briefly, it consists of
  * a flatten representation of query result trees.

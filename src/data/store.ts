@@ -35,6 +35,7 @@ import {
 import {
   graphQLResultHasError,
   NormalizedCache,
+  Cache
 } from './storeUtils';
 
 import {
@@ -51,12 +52,12 @@ import {
 } from '../util/errorHandling';
 
 export function data(
-  previousState: NormalizedCache = {},
+  previousState: Cache = {data: {}, queryCache: {}},
   action: ApolloAction,
   queries: QueryStore,
   mutations: MutationStore,
   config: ApolloReducerConfig,
-): NormalizedCache {
+): Cache {
   // XXX This is hopefully a temporary binding to get around
   // https://github.com/Microsoft/TypeScript/issues/7719
   const constAction = action;
@@ -78,28 +79,31 @@ export function data(
       const queryStoreValue = queries[action.queryId];
 
       // XXX use immutablejs instead of cloning
-      const clonedState = { ...previousState } as NormalizedCache;
+      const clonedCache = { ...previousState.data} as NormalizedCache;
 
       // TODO REFACTOR: is writeResultToStore a good name for something that doesn't actually
       // write to "the" store?
-      let newState = writeResultToStore({
-        result: action.result.data,
-        dataId: 'ROOT_QUERY', // TODO: is this correct? what am I doing here? What is dataId for??
-        document: action.document,
-        variables: queryStoreValue.variables,
-        store: clonedState,
-        dataIdFromObject: config.dataIdFromObject,
-      });
+      let newState = {
+        ...previousState,
+        data: writeResultToStore({
+          result: action.result.data,
+          dataId: 'ROOT_QUERY', // TODO: is this correct? what am I doing here? What is dataId for??
+          document: action.document,
+          variables: queryStoreValue.variables,
+          store: clonedCache,
+          dataIdFromObject: config.dataIdFromObject,
+        }),
+      };
 
       // XXX each reducer gets the state from the previous reducer.
       // Maybe they should all get a clone instead and then compare at the end to make sure it's consistent.
       if (action.extraReducers) {
         action.extraReducers.forEach( reducer => {
-          newState = reducer(newState, constAction);
+          newState.data = reducer(newState.data, constAction);
         });
       }
 
-      return newState;
+      return compareState(previousState, newState);
     }
   } else if (isSubscriptionResultAction(action)) {
     // the subscription interface should handle not sending us results we no longer subscribe to.
@@ -107,28 +111,31 @@ export function data(
     if (! graphQLResultHasError(action.result)) {
 
       // XXX use immutablejs instead of cloning
-      const clonedState = { ...previousState } as NormalizedCache;
+      const clonedCache = { ...previousState.data } as NormalizedCache;
 
       // TODO REFACTOR: is writeResultToStore a good name for something that doesn't actually
       // write to "the" store?
-      let newState = writeResultToStore({
-        result: action.result.data,
-        dataId: 'ROOT_SUBSCRIPTION',
-        document: action.document,
-        variables: action.variables,
-        store: clonedState,
-        dataIdFromObject: config.dataIdFromObject,
-      });
+      let newState = {
+        ...previousState,
+        data: writeResultToStore({
+          result: action.result.data,
+          dataId: 'ROOT_SUBSCRIPTION',
+          document: action.document,
+          variables: action.variables,
+          store: clonedCache,
+          dataIdFromObject: config.dataIdFromObject,
+        }),
+      };
 
       // XXX each reducer gets the state from the previous reducer.
       // Maybe they should all get a clone instead and then compare at the end to make sure it's consistent.
       if (action.extraReducers) {
         action.extraReducers.forEach( reducer => {
-          newState = reducer(newState, constAction);
+          newState.data = reducer(newState.data, constAction);
         });
       }
 
-      return newState;
+      return compareState(previousState, newState);
     }
   } else if (isMutationResultAction(constAction)) {
     // Incorporate the result from this mutation into the store unless the mutation is set to reset the whole store
@@ -136,16 +143,19 @@ export function data(
       const queryStoreValue = mutations[constAction.mutationId];
 
       // XXX use immutablejs instead of cloning
-      const clonedState = { ...previousState } as NormalizedCache;
+      const clonedCache = { ...previousState.data } as NormalizedCache;
 
-      let newState = writeResultToStore({
-        result: constAction.result.data,
-        dataId: 'ROOT_MUTATION',
-        document: constAction.document,
-        variables: queryStoreValue.variables,
-        store: clonedState,
-        dataIdFromObject: config.dataIdFromObject,
-      });
+      let newState = {
+        ...previousState,
+        data: writeResultToStore({
+          result: constAction.result.data,
+          dataId: 'ROOT_MUTATION',
+          document: constAction.document,
+          variables: queryStoreValue.variables,
+          store: clonedCache,
+          dataIdFromObject: config.dataIdFromObject,
+        }),
+      };
 
       // If this action wants us to update certain queries. Let’s do it!
       const { updateQueries } = constAction;
@@ -159,7 +169,7 @@ export function data(
 
           // Read the current query result from the store.
           const { result: currentQueryResult, isMissing } = diffQueryAgainstStore({
-            store: previousState,
+            store: previousState.data,
             query: query.document,
             variables: query.variables,
             returnPartialData: true,
@@ -182,12 +192,12 @@ export function data(
 
           // Write the modified result back into the store if we got a new result.
           if (nextQueryResult) {
-            newState = writeResultToStore({
+            newState.data = writeResultToStore({
               result: nextQueryResult,
               dataId: 'ROOT_QUERY',
               document: query.document,
               variables: query.variables,
-              store: newState,
+              store: newState.data,
               dataIdFromObject: config.dataIdFromObject,
             });
           }
@@ -200,7 +210,7 @@ export function data(
       if (constAction.update) {
         const update = constAction.update;
         const proxy = new TransactionDataProxy(
-          newState,
+          newState.data,
           config,
         );
         tryFunctionOrLogError(() => update(proxy, constAction.result));
@@ -218,33 +228,50 @@ export function data(
       // Maybe they should all get a clone instead and then compare at the end to make sure it's consistent.
       if (constAction.extraReducers) {
         constAction.extraReducers.forEach( reducer => {
-          newState = reducer(newState, constAction);
+          newState.data = reducer(newState.data, constAction);
         });
       }
 
-      return newState;
+      return compareState(previousState, newState);
     }
   } else if (isUpdateQueryResultAction(constAction)) {
-    return replaceQueryResults(previousState, constAction, config) as NormalizedCache;
+    return compareState(previousState, { ...previousState, data: replaceQueryResults(previousState.data, constAction, config) as NormalizedCache });
   } else if (isStoreResetAction(action)) {
     // If we are resetting the store, we no longer need any of the data that is currently in
     // the store so we can just throw it all away.
-    return {};
+    return { data: {}, queryCache: {}};
   } else if (isWriteAction(action)) {
     // Simply write our result to the store for this action for all of the
     // writes that were specified.
-    return action.writes.reduce(
-      (currentState, write) => writeResultToStore({
-        result: write.result,
-        dataId: write.rootId,
-        document: write.document,
-        variables: write.variables,
-        store: currentState,
-        dataIdFromObject: config.dataIdFromObject,
-      }),
-      { ...previousState } as NormalizedCache,
-    );
+    return compareState(previousState, {
+      ...previousState, data: action.writes.reduce(
+        (currentState, write) => {
+          return writeResultToStore({
+            result: write.result,
+            dataId: write.rootId,
+            document: write.document,
+            variables: write.variables,
+            store: currentState,
+            dataIdFromObject: config.dataIdFromObject,
+          });
+        }, {...previousState.data} as NormalizedCache,
+      )
+    });
   }
 
   return previousState;
+}
+
+function compareState(previousState: Cache, newState: Cache): Cache {
+  if (!newState.data) {
+    newState.data = {};
+  }
+  if (!newState.queryCache) {
+    newState.queryCache = {};
+  }
+
+  if (newState.data === previousState.data && newState.queryCache === previousState.queryCache) {
+    return previousState;
+  }
+  return newState;
 }

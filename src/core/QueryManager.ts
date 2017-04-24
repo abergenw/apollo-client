@@ -408,7 +408,7 @@ export class QueryManager {
     if ( (fetchType !== FetchType.refetch && fetchPolicy !== 'network-only')) {
       const { isMissing, result } = diffQueryAgainstStore({
         query: queryDoc,
-        store: this.reduxRootSelector(this.store.getState()).data,
+        store: this.reduxRootSelector(this.store.getState()).cache.data,
         variables,
         returnPartialData: true,
         fragmentMatcherFunction: this.fragmentMatcher.match,
@@ -734,11 +734,11 @@ export class QueryManager {
   }
 
   public getInitialState(): { data: Object } {
-    return { data: this.getApolloState().data };
+    return { data: this.getApolloState().cache };
   }
 
   public getDataWithOptimisticResults(): NormalizedCache {
-    return getDataWithOptimisticResults(this.getApolloState());
+    return getDataWithOptimisticResults(this.getApolloState()).data;
   }
 
   public addQueryListener(queryId: string, listener: QueryListener) {
@@ -934,7 +934,7 @@ export class QueryManager {
       // In case of an optimistic change, apply reducer on top of the
       // results including previous optimistic updates. Otherwise, apply it
       // on top of the real data only.
-      store: isOptimistic ? this.getDataWithOptimisticResults() : this.getApolloState().data,
+      store: isOptimistic ? this.getDataWithOptimisticResults() : this.getApolloState().cache.data,
       query: document,
       variables,
       config: this.reducerConfig,
@@ -1091,7 +1091,7 @@ export class QueryManager {
             // this will throw an error if there are missing fields in
             // the results if returnPartialData is false.
             resultFromStore = readQueryFromStore({
-              store: this.getApolloState().data,
+              store: this.getApolloState().cache.data,
               variables,
               query: document,
               config: this.reducerConfig,

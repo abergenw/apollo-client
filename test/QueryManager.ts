@@ -13,6 +13,7 @@ import { WatchQueryOptions } from '../src/core/watchQueryOptions';
 import {
   createApolloStore,
   ApolloStore,
+  Store,
 } from '../src/store';
 
 import gql from 'graphql-tag';
@@ -2253,7 +2254,11 @@ describe('QueryManager', () => {
 
       queryManager.resetStore();
       const currentState = queryManager.getApolloState();
-      const expectedState: any = {
+      const expectedState: Store = {
+        cache: {
+          data: {},
+          queryCache: {}
+        },
         data: {},
         mutations: {},
         queries: {},

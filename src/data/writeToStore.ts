@@ -55,6 +55,8 @@ import {
  *
  * @param fragmentMap A map from the name of a fragment to its fragment definition. These fragments
  * can be referenced within the query document.
+ *
+ * @param updatedData
  */
 export function writeQueryToStore({
   result,
@@ -63,6 +65,7 @@ export function writeQueryToStore({
   variables,
   dataIdFromObject,
   fragmentMap = {} as FragmentMap,
+  updatedData,
 }: {
   result: Object,
   query: DocumentNode,
@@ -70,6 +73,7 @@ export function writeQueryToStore({
   variables?: Object,
   dataIdFromObject?: IdGetter,
   fragmentMap?: FragmentMap,
+  updatedData?: {[id: string]: {}};
 }): NormalizedCache {
   const queryDefinition: OperationDefinitionNode = getQueryDefinition(query);
 
@@ -82,6 +86,7 @@ export function writeQueryToStore({
       variables,
       dataIdFromObject,
       fragmentMap,
+      updatedData
     },
   });
 }
@@ -91,6 +96,7 @@ export type WriteContext = {
   variables?: any;
   dataIdFromObject?: IdGetter;
   fragmentMap?: FragmentMap;
+  updatedData?: {[id: string]: {}};
 };
 
 export function writeResultToStore({
@@ -100,6 +106,7 @@ export function writeResultToStore({
   store = {} as NormalizedCache,
   variables,
   dataIdFromObject,
+  updatedData,
 }: {
   dataId: string,
   result: any,
@@ -107,6 +114,7 @@ export function writeResultToStore({
   store?: NormalizedCache,
   variables?: Object,
   dataIdFromObject?: IdGetter,
+  updatedData?: {[id: string]: {}};
 }): NormalizedCache {
 
   // XXX TODO REFACTOR: this is a temporary workaround until query normalization is made to work with documents.
@@ -122,6 +130,7 @@ export function writeResultToStore({
       variables,
       dataIdFromObject,
       fragmentMap,
+      updatedData
     },
   });
 }
@@ -326,6 +335,10 @@ function writeFieldToStore({
 
   if (!store[dataId] || storeValue !== store[dataId][storeFieldName]) {
     store[dataId] = newStoreObj;
+
+    if (context.updatedData) {
+      context.updatedData[dataId] = newStoreObj;
+    }
   }
 }
 

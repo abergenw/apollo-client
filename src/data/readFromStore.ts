@@ -62,6 +62,7 @@ export type ReadQueryOptions = {
 
 export type DiffQueryAgainstStoreOptions = ReadQueryOptions & {
   returnPartialData?: boolean,
+  queryCachePointers?: {[id: string]: {}};
 };
 
 export type CustomResolver = (rootValue: any, args: { [argName: string]: any }) => any;
@@ -200,6 +201,7 @@ export function diffQueryAgainstStore({
   rootId = 'ROOT_QUERY',
   fragmentMatcherFunction,
   config,
+  queryCachePointers,
 }: DiffQueryAgainstStoreOptions): DiffResult {
   // Throw the right validation error by trying to find a query in the document
   getQueryDefinition(query);
@@ -222,7 +224,7 @@ export function diffQueryAgainstStore({
 
   const result = graphqlAnywhere(readStoreResolver, query, rootIdValue, context, variables, {
     fragmentMatcher: fragmentMatcherFunction,
-    resultMapper,
+    resultMapper: queryCachePointers ? getResultMapperWithQueryCachePointers(queryCachePointers) : resultMapper,
   });
 
   return {
@@ -337,6 +339,13 @@ function resultMapper (resultFields: any, idValue: IdValueWithPreviousResult) {
   });
 
   return resultFields;
+}
+
+function getResultMapperWithQueryCachePointers (queryCachePointers: {[id: string]: {}}) {
+  return (resultFields: any, idValue: IdValueWithPreviousResult) => {
+    resultFields = resultMapper(resultFields, idValue);
+    queryCachePointers[idValue.id] = resultFields;
+  };
 }
 
 type NestedArray<T> = T | Array<T | Array<T | Array<T>>>;

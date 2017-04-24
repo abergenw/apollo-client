@@ -16,6 +16,7 @@ import {
 
 import {
   NormalizedCache,
+  Cache,
 } from './data/storeUtils';
 
 import {
@@ -50,7 +51,7 @@ import {
   CustomResolverMap,
 } from './data/readFromStore';
 
-import { assign } from './util/assign';
+import {assign} from './util/assign';
 
 export interface ReducerError {
   error: Error;
@@ -60,7 +61,8 @@ export interface ReducerError {
 }
 
 export interface Store {
-  data: NormalizedCache;
+  data?: NormalizedCache;
+  cache: Cache;
   queries: QueryStore;
   mutations: MutationStore;
   optimistic: OptimisticStore;
@@ -106,7 +108,7 @@ const createReducerError = (error: Error, action: ApolloAction): ReducerError =>
 export type ApolloReducer = (store: NormalizedCache, action: ApolloAction) => NormalizedCache;
 
 export function createApolloReducer(config: ApolloReducerConfig): (state: Store, action: ApolloAction) => Store {
-  return function apolloReducer(state = {} as Store, action: ApolloAction) {
+  return function apolloReducer(state = {cache: {data: {}, queryCache: {}}} as Store, action: ApolloAction) {
     try {
       const newState: Store = {
         queries: queries(state.queries, action),
@@ -114,11 +116,14 @@ export function createApolloReducer(config: ApolloReducerConfig): (state: Store,
 
         // Note that we are passing the queries into this, because it reads them to associate
         // the query ID in the result with the actual query
-        data: data(state.data, action, state.queries, state.mutations, config),
+        cache: data(state.cache, action, state.queries, state.mutations, config),
         optimistic: [] as any,
 
         reducerError: null,
       };
+
+      // Backwards compatibility
+      newState.data = newState.cache.data;
 
       // use the two lines below to debug tests :)
       // console.log('ACTION', action.type, JSON.stringify(action, null, 2));
@@ -135,11 +140,12 @@ export function createApolloReducer(config: ApolloReducerConfig): (state: Store,
         config,
       );
 
-      if (state.data === newState.data &&
-      state.mutations === newState.mutations &&
-      state.queries === newState.queries &&
-      state.optimistic === newState.optimistic &&
-      state.reducerError === newState.reducerError) {
+      if (state.cache.data === newState.cache.data &&
+        state.cache.queryCache === newState.cache.queryCache &&
+        state.mutations === newState.mutations &&
+        state.queries === newState.queries &&
+        state.optimistic === newState.optimistic &&
+        state.reducerError === newState.reducerError) {
         return state;
       }
 
@@ -195,12 +201,31 @@ export function createApolloStore({
   // Note: The below checks are what make it OK for QueryManager to start from 0 when generating
   // new query IDs. If we let people rehydrate query state for some reason, we would need to make
   // sure newly generated IDs don't overlap with old queries.
-  if ( initialState && initialState[reduxRootKey] && initialState[reduxRootKey]['queries']) {
-    throw new Error('Apollo initial state may not contain queries, only data');
-  }
+  if (initialState && initialState[reduxRootKey]) {
+    if (initialState[reduxRootKey]['queries']) {
+      throw new Error('Apollo initial state may not contain queries, only data');
+    }
 
-  if ( initialState && initialState[reduxRootKey] && initialState[reduxRootKey]['mutations']) {
-    throw new Error('Apollo initial state may not contain mutations, only data');
+    if (initialState[reduxRootKey]['mutations']) {
+      throw new Error('Apollo initial state may not contain mutations, only data');
+    }
+
+    if (initialState[reduxRootKey]['cache'] && initialState[reduxRootKey]['cache']['queryCache']) {
+      throw new Error('Apollo initial state may not contain query cache, only data');
+    }
+
+    if (initialState[reduxRootKey]['data']) {
+      if (!initialState[reduxRootKey]['cache']) {
+        initialState[reduxRootKey]['cache'] = {};
+      }
+      if (!initialState[reduxRootKey]['cache']['data']) {
+        initialState[reduxRootKey]['cache']['data'] = {};
+      }
+      if (!initialState[reduxRootKey]['cache']['queryCache']) {
+        initialState[reduxRootKey]['cache']['queryCache'] = {};
+      }
+      assign(initialState[reduxRootKey]['cache']['data'], initialState[reduxRootKey]['data']);
+    }
   }
 
   return createStore(

@@ -12,6 +12,8 @@ import {
 
 import {
   NormalizedCache,
+  Cache,
+  QueryCache,
 } from '../data/storeUtils';
 
 import {
@@ -32,6 +34,7 @@ import {
 export type OptimisticStoreItem = {
   mutationId: string,
   data: NormalizedCache,
+  queryCache: QueryCache,
 };
 
 // a stack of patches of new or changed documents
@@ -39,12 +42,15 @@ export type OptimisticStore = OptimisticStoreItem[];
 
 const optimisticDefaultState: any[] = [];
 
-export function getDataWithOptimisticResults(store: Store): NormalizedCache {
+export function getDataWithOptimisticResults(store: Store): Cache {
   if (store.optimistic.length === 0) {
-    return store.data;
+    return store.cache;
   }
-  const patches = store.optimistic.map(opt => opt.data);
-  return assign({}, store.data, ...patches) as NormalizedCache;
+
+  return {
+    data: assign({}, store.cache.data, ...store.optimistic.map(opt => opt.data)),
+    queryCache: assign({}, store.cache.queryCache, ...store.optimistic.map(opt => opt.queryCache)),
+  };
 }
 
 export function optimistic(
@@ -80,8 +86,8 @@ export function optimistic(
     );
 
     const optimisticState = {
+      ...patch,
       action: fakeMutationResultAction,
-      data: patch,
       mutationId: action.mutationId,
     };
 
@@ -102,7 +108,7 @@ export function optimistic(
 }
 
 function getOptimisticDataPatch (
-  previousData: NormalizedCache,
+  previousData: Cache,
   optimisticAction: MutationResultAction | WriteAction,
   queries: QueryStore,
   mutations: MutationStore,
@@ -116,11 +122,20 @@ function getOptimisticDataPatch (
     config,
   );
 
-  const patch: any = {};
+  const patch: any = {
+    data: {},
+    queryCache: {},
+  };
 
-  Object.keys(optimisticData).forEach(key => {
-    if (optimisticData[key] !== previousData[key]) {
-      patch[key] = optimisticData[key];
+  Object.keys(optimisticData.data).forEach(key => {
+    if (optimisticData.data[key] !== previousData.data[key]) {
+      patch.data[key] = optimisticData.data[key];
+    }
+  });
+
+  Object.keys(optimisticData.queryCache).forEach(key => {
+    if (optimisticData.queryCache[key] !== previousData.queryCache[key]) {
+      patch.queryCache[key] = optimisticData.queryCache[key];
     }
   });
 
@@ -142,7 +157,10 @@ function rollbackOptimisticData (
   config: any,
 ): OptimisticStore {
   // Create a shallow copy of the data in the store.
-  const optimisticData = assign({}, store.data);
+  const optimisticData = {
+    data: assign({}, store.cache.data),
+    queryCache: assign({}, store.cache.queryCache)
+  };
 
   const newState = previousState
     // Throw away optimistic changes of that particular mutation
@@ -156,10 +174,11 @@ function rollbackOptimisticData (
         store.mutations,
         config,
       );
-      assign(optimisticData, patch);
+      assign(optimisticData.data, patch.data);
+      assign(optimisticData.queryCache, patch.queryCache);
       return {
         ...change,
-        data: patch,
+        ...patch,
       };
     });
 

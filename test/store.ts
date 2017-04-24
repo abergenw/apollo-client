@@ -21,6 +21,10 @@ describe('createApolloStore', () => {
       {
         queries: {},
         mutations: {},
+        cache: {
+          data: {},
+          queryCache: {},
+        },
         data: {},
         optimistic: [],
         reducerError: null,
@@ -38,6 +42,10 @@ describe('createApolloStore', () => {
       {
         queries: {},
         mutations: {},
+        cache: {
+          data: {},
+          queryCache: {},
+        },
         data: {},
         optimistic: [],
         reducerError: null,
@@ -63,6 +71,10 @@ describe('createApolloStore', () => {
       apollo: {
         queries: {},
         mutations: {},
+        cache: {
+          data: initialState.apollo.data,
+          queryCache: {},
+        },
         data: initialState.apollo.data,
         optimistic: initialState.apollo.optimistic,
         reducerError: null,
@@ -116,9 +128,13 @@ describe('createApolloStore', () => {
     };
 
     const emptyState: Store = {
-      queries: { },
-      mutations: { },
-      data: { },
+      queries: {},
+      mutations: {},
+      cache: {
+        data: {},
+        queryCache: {}
+      },
+      data: {},
       optimistic: ([] as any[]),
       reducerError: null,
     };
@@ -163,6 +179,10 @@ describe('createApolloStore', () => {
         },
       },
       mutations: {},
+      cache: {
+        data: {},
+        queryCache: {}
+      },
       data: {},
       optimistic: ([] as any[]),
       reducerError: null,
@@ -238,9 +258,14 @@ describe('createApolloStore', () => {
       queries: {},
       mutations: {},
       data: {},
+      cache: {
+        data: {},
+        queryCache: {},
+      },
       optimistic: [
         {
           data: {},
+          queryCache: {},
           mutationId: '1',
           action: {
             type: 'APOLLO_MUTATION_RESULT',
