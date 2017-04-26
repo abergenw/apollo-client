@@ -562,19 +562,118 @@ describe('writing to the store', () => {
     });
   });
 
-  it('merges nodes', () => {
+  it('merges node containing array with ids and different order', () => {
     const query = gql`
       {
-        id,
-        numberField,
-        nullField
+        id
+        array {
+          id
+          stringField
+        }
       }
     `;
 
     const result: any = {
       id: 'abcd',
-      numberField: 5,
-      nullField: null,
+      array: [
+        {
+          id: 'child1',
+          stringField: 'First child'
+        },
+        {
+          id: 'child2',
+          stringField: 'Second child'
+        },
+      ]
+    };
+
+    const store = writeQueryToStore({
+      query,
+      result: cloneDeep(result),
+      dataIdFromObject: getIdField,
+    });
+
+    const query = gql`
+      {
+        id
+        array {
+          id
+          stringField
+          numberField
+        }
+      }
+    `;
+
+    const result2: any = {
+      id: 'abcd',
+      array: [
+        {
+          id: 'child2',
+          stringField: 'Second child',
+          numberField: 2,
+        },
+        {
+          id: 'child1',
+          stringField: 'First child',
+          numberField: 1
+        },
+      ]
+    };
+
+    const store2 = writeQueryToStore({
+      store,
+      query: query,
+      result: result2,
+      dataIdFromObject: getIdField,
+    });
+
+    assert.deepEqual(store2, {
+      'ROOT_QUERY': {
+        id: 'abcd',
+        array: [
+          {
+            id: 'child2',
+            generated: false,
+            type: 'id'
+          },
+          {
+            id: 'child1',
+            generated: false,
+            type: 'id'
+          },
+        ],
+      },
+      child1: {
+        id: 'child1',
+        stringField: 'First child',
+        numberField: 1,
+      },
+      child2: {
+        id: 'child2',
+        stringField: 'Second child',
+        numberField: 2
+      }
+    });
+  });
+
+  it('merges node containing array without ids and different order', () => {
+    const query = gql`
+      {
+        array {
+          stringField
+        }
+      }
+    `;
+
+    const result: any = {
+      array: [
+        {
+          stringField: 'First child'
+        },
+        {
+          stringField: 'Second child'
+        },
+      ]
     };
 
     const store = writeQueryToStore({
@@ -585,16 +684,24 @@ describe('writing to the store', () => {
 
     const query2 = gql`
       {
-        id,
-        stringField,
-        nullField
+        array {
+          stringField
+          numberField
+        }
       }
     `;
 
     const result2: any = {
-      id: 'abcd',
-      stringField: 'This is a string!',
-      nullField: null,
+      array: [
+        {
+          stringField: 'Second child',
+          numberField: 2,
+        },
+        {
+          stringField: 'First child',
+          numberField: 1
+        },
+      ]
     };
 
     const store2 = writeQueryToStore({
@@ -605,7 +712,28 @@ describe('writing to the store', () => {
     });
 
     assert.deepEqual(store2, {
-      'ROOT_QUERY': assign({}, result, result2),
+      'ROOT_QUERY': {
+        array: [
+          {
+            id: 'ROOT_QUERY.array.0',
+            generated: true,
+            type: 'id'
+          },
+          {
+            id: 'ROOT_QUERY.array.1',
+            generated: true,
+            type: 'id'
+          },
+        ],
+      },
+      'ROOT_QUERY.array.0': {
+        stringField: 'Second child',
+        numberField: 2,
+      },
+      'ROOT_QUERY.array.1': {
+        stringField: 'First child',
+        numberField: 1
+      }
     });
   });
 
