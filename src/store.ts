@@ -105,11 +105,15 @@ const createReducerError = (error: Error, action: ApolloAction): ReducerError =>
   return reducerError;
 };
 
-export type ApolloReducer = (store: NormalizedCache, action: ApolloAction) => NormalizedCache;
+export type ApolloReducer = (store: Cache, action: ApolloAction) => Cache;
 
 export function createApolloReducer(config: ApolloReducerConfig): (state: Store, action: ApolloAction) => Store {
   return function apolloReducer(state = {cache: {data: {}, queryCache: {}}} as Store, action: ApolloAction) {
     try {
+      // console.log('====');
+      // console.log('=== ACTION ===', action.type);
+      // console.log('====');
+
       const newState: Store = {
         queries: queries(state.queries, action),
         mutations: mutations(state.mutations, action),
@@ -227,6 +231,32 @@ export function createApolloStore({
       assign(initialState[reduxRootKey]['cache']['data'], initialState[reduxRootKey]['data']);
     }
   }
+
+  // const store = createStore(
+  //   combineReducers({ [reduxRootKey]: createApolloReducer(config) }),
+  //   initialState,
+  //   compose(...enhancers),
+  // );
+  //
+  // const subscribe = store.subscribe;
+  // store.subscribe = listener => {
+  //   let timeout: any = null;
+  //
+  //   const innerWrapper = () => {
+  //     timeout = null;
+  //     listener();
+  //   };
+  //
+  //   const outerWrapper = () => {
+  //     // console.log('CALLING STORE LISTENER WITH TIMEOUT', timeout);
+  //     timeout && clearTimeout(timeout);
+  //     timeout = setTimeout(innerWrapper, 0);
+  //   };
+  //
+  //   return subscribe(outerWrapper);
+  // };
+  //
+  // return store;
 
   return createStore(
     combineReducers({ [reduxRootKey]: createApolloReducer(config) }),

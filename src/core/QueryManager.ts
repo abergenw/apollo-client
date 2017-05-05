@@ -46,6 +46,7 @@ import {
 
 import {
   NormalizedCache,
+  Cache,
 } from '../data/storeUtils';
 
 import {
@@ -93,6 +94,7 @@ import {
 import {
   MutationQueryReducersMap,
   MutationQueryReducer,
+  MutationStoreUpdatePolicy,
 } from '../data/mutationResults';
 
 import {
@@ -109,7 +111,9 @@ import {
   Observable,
 } from '../util/Observable';
 
-import { tryFunctionOrLogError } from '../util/errorHandling';
+import {
+  tryFunctionOrLogError
+} from '../util/errorHandling';
 
 import {
   isApolloError,
@@ -121,7 +125,14 @@ import {
   SubscriptionOptions,
 } from './watchQueryOptions';
 
-import { ObservableQuery } from './ObservableQuery';
+import {
+  ObservableQuery
+} from './ObservableQuery';
+
+import {
+  QueryResultClientAction,
+  QueryCacheAction
+} from '../actions';
 
 export class QueryManager {
   public pollingTimers: {[queryId: string]: any};
@@ -216,17 +227,51 @@ export class QueryManager {
     // this.store is usually the fake store we get from the Redux middleware API
     // XXX for tests, we sometimes pass in a real Redux store into the QueryManager
     if ((this.store as any)['subscribe']) {
-      let currentStoreData: any;
+      let currentStoreData: Store;
+
       (this.store as any)['subscribe'](() => {
-        let previousStoreData = currentStoreData || {};
-        const previousStoreHasData = Object.keys(previousStoreData).length;
+        let previousStoreData:Store = currentStoreData || {};
         currentStoreData = this.getApolloState();
-        if (isEqual(previousStoreData, currentStoreData) && previousStoreHasData) {
-          return;
+
+        if (!Object.keys(previousStoreData).length) {
+          this.broadcastQueries();
         }
-        this.broadcastQueries();
+        else if (!isEqual(previousStoreData.cache.data, currentStoreData.cache.data)) {
+          console.log('DATA CHANGED, BROADCASTING QUERIES');
+          this.broadcastQueries();
+        }
+        else if (!isEqual(previousStoreData.mutations, currentStoreData.mutations)) {
+          console.log('MUTATIONS CHANGED, BROADCASTING QUERIES');
+          this.broadcastQueries();
+        }
+        else if (!isEqual(previousStoreData.reducerError, currentStoreData.reducerError)) {
+          console.log('REDUCER ERROR CHANGED, BROADCASTING QUERIES');
+          this.broadcastQueries();
+        }
+        else {
+          // Only broadcast changed queries
+          Object.keys(this.queryListeners).forEach((queryId: string) => {
+            if (!isEqual(previousStoreData.queries[queryId] || {}, currentStoreData.queries[queryId])) {
+              console.log('QUERY CHANGE, BROADCASTING SINGLE QUERY', queryId);
+              this.broadcastQuery(queryId, currentStoreData.queries[queryId]);
+            }
+          });
+        }
       });
     }
+
+    // if ((this.store as any)['subscribe']) {
+    //   let currentStoreData: any;
+    //   (this.store as any)['subscribe'](() => {
+    //     let previousStoreData = currentStoreData || {};
+    //     const previousStoreHasData = Object.keys(previousStoreData).length;
+    //     currentStoreData = this.getApolloState();
+    //     if (isEqual(previousStoreData, currentStoreData) && previousStoreHasData) {
+    //       return;
+    //     }
+    //     this.broadcastQueries();
+    //   });
+    // }
   }
 
   // Called from middleware
@@ -241,7 +286,7 @@ export class QueryManager {
     updateQueries: updateQueriesByName,
     refetchQueries = [],
     update: updateWithProxyFn,
-    resetStore = false,
+    storeUpdatePolicy = 'update',
   }: {
     mutation: DocumentNode,
     variables?: Object,
@@ -249,7 +294,7 @@ export class QueryManager {
     updateQueries?: MutationQueryReducersMap,
     refetchQueries?: string[] | PureQueryOptions[],
     update?: (proxy: DataProxy, mutationResult: Object) => void,
-    resetStore?: boolean,
+    storeUpdatePolicy?: MutationStoreUpdatePolicy,
   }): Promise<ApolloQueryResult<T>> {
     const mutationId = this.generateQueryId();
 
@@ -286,6 +331,7 @@ export class QueryManager {
       extraReducers: this.getExtraReducers(),
       updateQueries,
       update: updateWithProxyFn,
+      storeUpdatePolicy,
     });
 
     const mutationPromise = new Promise((resolve, reject) => {
@@ -316,7 +362,7 @@ export class QueryManager {
             extraReducers: this.getExtraReducers(),
             updateQueries,
             update: updateWithProxyFn,
-            resetStore: resetStore,
+            storeUpdatePolicy,
           });
 
           // If there was an error in our reducers, reject this promise!
@@ -338,6 +384,9 @@ export class QueryManager {
             });
           }
 
+          if (storeUpdatePolicy === 'reset-on-success') {
+            this.resetStore();
+          }
 
           delete this.queryDocuments[mutationId];
           resolve(<ApolloQueryResult<T>>result);
@@ -356,7 +405,7 @@ export class QueryManager {
         });
     });
 
-    if (resetStore) {
+    if (storeUpdatePolicy === 'reset-optimistic') {
       return new Promise((resolve, reject) => {
         let mutationResult: any = null;
         let resetStoreResult: any = null;
@@ -387,6 +436,8 @@ export class QueryManager {
     fetchMoreForQueryId?: string,
   ): Promise<ApolloQueryResult<T>> {
 
+      console.log('WATCH QUERY', queryId);
+
     const {
       variables = {},
       metadata = null,
@@ -401,30 +452,37 @@ export class QueryManager {
 
     let storeResult: any;
     let needToFetch: boolean = fetchPolicy === 'network-only';
+    let cachableQueryPointers;
 
     // If this is not a force fetch, we want to diff the query against the
     // store before we fetch it from the network interface.
     // TODO we hit the cache even if the policy is network-first. This could be unnecessary if the network is up.
     if ( (fetchType !== FetchType.refetch && fetchPolicy !== 'network-only')) {
-      const { isMissing, result } = diffQueryAgainstStore({
+      const cache = this.getApolloState().cache;
+
+      const {isMissing, result, wasCached, queryCachePointers} = diffQueryAgainstStore({
         query: queryDoc,
-        store: this.reduxRootSelector(this.store.getState()).cache.data,
+        store: cache.data,
         variables,
         returnPartialData: true,
         fragmentMatcherFunction: this.fragmentMatcher.match,
         config: this.reducerConfig,
+        queryCache: cache.queryCache,
+        cacheQueryId: queryId,
       });
 
+      storeResult = result;
       // If we're in here, only fetch if we have missing fields
       needToFetch = isMissing || fetchPolicy === 'cache-and-network';
 
-      storeResult = result;
+      if (!wasCached && !isMissing) {
+        cachableQueryPointers = queryCachePointers;
+      }
     }
 
     const shouldFetch = needToFetch && fetchPolicy !== 'cache-only';
 
     const requestId = this.generateRequestId();
-
 
     // Initialize query in store with unique requestId
     this.queryDocuments[queryId] = queryDoc;
@@ -455,9 +513,11 @@ export class QueryManager {
         variables,
         document: queryDoc,
         complete: !shouldFetch,
+        shouldCache: !!cachableQueryPointers,
         queryId,
         requestId,
-      });
+        queryCachePointers: cachableQueryPointers,
+      } as QueryResultClientAction);
     }
 
     if (shouldFetch) {
@@ -493,6 +553,9 @@ export class QueryManager {
         return networkResult;
       }
     }
+
+    // console.log('DELIVERING INITIAL RESULT FORM CACHE', queryId);
+
     // If we have no query to send to the server, we should return the result
     // found within the store.
     return Promise.resolve({ data: storeResult });
@@ -507,6 +570,7 @@ export class QueryManager {
   ): QueryListener {
     let lastResult: ApolloQueryResult<T>;
     return (queryStoreValue: QueryStoreValue) => {
+      // console.log('NEXT!');
       // The query store value can be undefined in the event of a store
       // reset.
       if (!queryStoreValue) {
@@ -525,6 +589,7 @@ export class QueryManager {
       if (!isNetworkRequestInFlight(queryStoreValue.networkStatus) ||
           ( networkStatusChanged && options.notifyOnNetworkStatusChange ) ||
           shouldNotifyIfLoading) {
+        // console.log('NOT IN FLIGHT');
         // XXX Currently, returning errors and data is exclusive because we
         // don't handle partial results
 
@@ -557,15 +622,35 @@ export class QueryManager {
             }
           }
         } else {
+          // console.log('NO ERROR');
           try {
-            const { result: data, isMissing } = diffQueryAgainstStore({
-              store: this.getDataWithOptimisticResults(),
+            const cache = this.getCacheWithOptimisticResults();
+            const { result: data, isMissing, wasCached, queryCachePointers } = diffQueryAgainstStore({
+              store: cache.data,
               query: this.queryDocuments[queryId],
               variables: queryStoreValue.previousVariables || queryStoreValue.variables,
               config: this.reducerConfig,
               fragmentMatcherFunction: this.fragmentMatcher.match,
               previousResult: lastResult && lastResult.data,
+              queryCache: cache.queryCache,
+              cacheQueryId: queryId,
+              allowModifiedQueryCache: true,
             });
+
+            // console.log('CACHED DATA FOR NEXT', queryId, wasCached);
+            // if (!wasCached) {
+            //   console.log('NOT CACHED, CACHE CONTAINS', JSON.stringify(cache.queryCache, null, 2), JSON.stringify(queryStoreValue.previousVariables || queryStoreValue.variables, null, 2));
+            // }
+
+            if (!wasCached && !isMissing) {
+              this.store.dispatch({
+                type: 'APOLLO_QUERY_CACHE',
+                result: {data},
+                variables: queryStoreValue.previousVariables || queryStoreValue.variables,
+                queryId: queryId,
+                queryCachePointers: queryCachePointers,
+              } as QueryCacheAction);
+            }
 
             let resultFromStore: ApolloQueryResult<T>;
 
@@ -602,6 +687,8 @@ export class QueryManager {
                 );
 
               if (isDifferentResult) {
+                console.log('DELIVERING CHANGED RESULT FOR QUERY', queryId);
+                // console.log('DIFFERENT', JSON.stringify(resultFromStore, null, 2), JSON.stringify(lastResult, null, 2));
                 lastResult = resultFromStore;
                 try {
                   observer.next(maybeDeepFreeze(resultFromStore));
@@ -609,6 +696,10 @@ export class QueryManager {
                   // Throw error outside this control flow to avoid breaking Apollo's state
                   setTimeout(() => { throw e; }, 0);
                 }
+              }
+              else {
+                console.log('SKIPPING DELIVERY OF RESULT FOR QUERY', queryId);
+                // console.log('SAME');
               }
             }
           } catch (error) {
@@ -741,6 +832,10 @@ export class QueryManager {
     return getDataWithOptimisticResults(this.getApolloState()).data;
   }
 
+  public getCacheWithOptimisticResults(): Cache {
+    return getDataWithOptimisticResults(this.getApolloState());
+  }
+
   public addQueryListener(queryId: string, listener: QueryListener) {
     this.queryListeners[queryId] = this.queryListeners[queryId] || [];
     this.queryListeners[queryId].push(listener);
@@ -785,7 +880,7 @@ export class QueryManager {
     }
   }
 
-  public resetStore(dispatchStoreReset: boolean = true): Promise<ApolloQueryResult<any>[]> {
+  public resetStore(): Promise<ApolloQueryResult<any>[]> {
     // Before we have sent the reset action to the store,
     // we can no longer rely on the results returned by in-flight
     // requests since these may depend on values that previously existed
@@ -797,12 +892,10 @@ export class QueryManager {
       reject(new Error('Store reset while query was in flight.'));
     });
 
-    if (dispatchStoreReset) {
-      this.store.dispatch({
-        type: 'APOLLO_STORE_RESET',
-        observableQueryIds: Object.keys(this.observableQueries),
-      });
-    }
+    this.store.dispatch({
+      type: 'APOLLO_STORE_RESET',
+      observableQueryIds: Object.keys(this.observableQueries),
+    });
 
     // Similarly, we have to have to refetch each of the queries currently being
     // observed. We refetch instead of error'ing on these since the assumption is that
@@ -816,7 +909,7 @@ export class QueryManager {
 
       const fetchPolicy = this.observableQueries[queryId].observableQuery.options.fetchPolicy;
 
-      if (fetchPolicy !== 'cache-only') {
+      if (fetchPolicy !== 'cache-only' && fetchPolicy !== 'do-not-execute') {
         observableQueryPromises.push(this.observableQueries[queryId].observableQuery.refetch());
       }
     });
@@ -923,30 +1016,43 @@ export class QueryManager {
   }
 
   public getCurrentQueryResult<T>(observableQuery: ObservableQuery<T>, isOptimistic = false) {
+      console.log('GET CURRENT QUERY RESULT', observableQuery.queryId);
+
     const {
       variables,
       document } = this.getQueryParts(observableQuery);
 
     const lastResult = observableQuery.getLastResult();
 
-    const queryOptions = observableQuery.options;
+    // In case of an optimistic change, apply reducer on top of the
+    // results including previous optimistic updates. Otherwise, apply it
+    // on top of the real data only.
+    const cache = isOptimistic ? this.getCacheWithOptimisticResults() : this.getApolloState().cache;
+
     const readOptions: ReadQueryOptions = {
       // In case of an optimistic change, apply reducer on top of the
       // results including previous optimistic updates. Otherwise, apply it
       // on top of the real data only.
-      store: isOptimistic ? this.getDataWithOptimisticResults() : this.getApolloState().cache.data,
+      store: cache.data,
       query: document,
       variables,
       config: this.reducerConfig,
       previousResult: lastResult ? lastResult.data : undefined,
       fragmentMatcherFunction: this.fragmentMatcher.match,
+      queryCache: cache.queryCache,
+      cacheQueryId: observableQuery.queryId,
+      allowModifiedQueryCache: true,
     };
 
     try {
       // first try reading the full result from the store
       const data = readQueryFromStore(readOptions);
+
+      // console.log('READ CURRENT QUERY FROM STORE', observableQuery.queryId, lastResult, lastResult && lastResult.data == data);
+
       return maybeDeepFreeze({ data, partial: false });
     } catch (e) {
+      console.log('PARTIAL DATA', observableQuery.queryId);
       return maybeDeepFreeze({ data: {}, partial: true });
     }
   }
@@ -1087,15 +1193,19 @@ export class QueryManager {
 
           let resultFromStore: any;
           try {
+            const cache = this.getApolloState().cache;
+
             // ensure result is combined with data already in store
             // this will throw an error if there are missing fields in
             // the results if returnPartialData is false.
             resultFromStore = readQueryFromStore({
-              store: this.getApolloState().cache.data,
+              store: cache.data,
               variables,
               query: document,
               config: this.reducerConfig,
               fragmentMatcherFunction: this.fragmentMatcher.match,
+              queryCache: cache.queryCache,
+              cacheQueryId: queryId,
             });
             // ensure multiple errors don't get thrown
             /* tslint:disable */
@@ -1135,21 +1245,29 @@ export class QueryManager {
   private broadcastQueries() {
     const queries = this.getApolloState().queries;
     Object.keys(this.queryListeners).forEach((queryId: string) => {
-      const listeners = this.queryListeners[queryId];
-      // XXX due to an unknown race condition listeners can sometimes be undefined here.
-      // this prevents a crash but doesn't solve the root cause
-      // see: https://github.com/apollostack/apollo-client/issues/833
-      if (listeners) {
-        listeners.forEach((listener: QueryListener) => {
-          // it's possible for the listener to be undefined if the query is being stopped
-          // See here for more detail: https://github.com/apollostack/apollo-client/issues/231
-          if (listener) {
-            const queryStoreValue = queries[queryId];
-            listener(queryStoreValue);
-          }
-        });
-      }
+      this.broadcastQuery(queryId, queries[queryId]);
     });
+  }
+
+  private broadcastQuery(queryId: string, queryStoreValue: QueryStoreValue) {
+    if (this.observableQueries[queryId] && this.observableQueries[queryId].observableQuery.options.fetchPolicy === 'do-not-execute') {
+      // console.log('SKIPPING BROADCASTING AS DO NOT EXECUTE');
+      return;
+    }
+
+    const listeners = this.queryListeners[queryId];
+    // XXX due to an unknown race condition listeners can sometimes be undefined here.
+    // this prevents a crash but doesn't solve the root cause
+    // see: https://github.com/apollostack/apollo-client/issues/833
+    if (listeners) {
+      listeners.forEach((listener: QueryListener) => {
+        // it's possible for the listener to be undefined if the query is being stopped
+        // See here for more detail: https://github.com/apollostack/apollo-client/issues/231
+        if (listener) {
+          listener(queryStoreValue);
+        }
+      });
+    }
   }
 
   private generateRequestId() {

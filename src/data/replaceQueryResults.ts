@@ -1,5 +1,5 @@
 import {
-  NormalizedCache,
+  Cache,
 } from './storeUtils';
 
 import {
@@ -14,23 +14,25 @@ import {
   DocumentNode,
 } from 'graphql';
 
-export function replaceQueryResults(state: NormalizedCache, {
+export function replaceQueryResults(cache: Cache, {
+  queryId,
   variables,
   document,
   newResult,
 }: {
+  queryId: string,
   variables: any;
   document: DocumentNode;
   newResult: Object;
-}, config: ApolloReducerConfig) {
-  const clonedState = { ...state } as NormalizedCache;
-
+}, config: ApolloReducerConfig): Cache {
   return writeResultToStore({
     result: newResult,
     dataId: 'ROOT_QUERY',
     variables,
     document,
-    store: clonedState,
+    store: {...cache.data},
     dataIdFromObject: config.dataIdFromObject,
+    queryCache: cache.queryCache,
+    cacheQueryId: queryId,
   });
 }

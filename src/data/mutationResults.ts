@@ -7,6 +7,7 @@ export type MutationQueryReducer = (previousResult: Object, options: {
   mutationResult: Object,
   queryName: Object,
   queryVariables: Object,
+  updateStoreFlag?: boolean;
 }) => Object;
 
 export type MutationQueryReducersMap = {
@@ -18,3 +19,6 @@ export type OperationResultReducer = (previousResult: Object, action: ApolloActi
 export type OperationResultReducerMap = {
   [queryId: string]: OperationResultReducer;
 };
+
+export type MutationStoreUpdatePolicy = 'update' | 'reset-optimistic' | 'reset-on-success';
+

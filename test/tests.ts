@@ -56,3 +56,4 @@ import './assign';
 import './environment';
 import './ApolloClient';
 import './proxy';
+import './queryCache';

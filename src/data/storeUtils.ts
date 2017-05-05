@@ -120,7 +120,15 @@ export interface Cache {
 }
 
 export interface QueryCache {
-  [queryId: string]: {};
+  [queryId: string]: QueryCacheValue;
+}
+
+export interface QueryCacheValue {
+  result: any;
+  pointers: {[id: string]: {}[]};
+  variables?: Object;
+  dirty: boolean;
+  modified: boolean;
 }
 
 /**

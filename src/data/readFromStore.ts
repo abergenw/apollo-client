@@ -13,6 +13,8 @@ import {
   isJsonValue,
   isIdValue,
   IdValue,
+  Cache,
+  QueryCache,
 } from './storeUtils';
 
 import {
@@ -34,6 +36,7 @@ import {
 import {
   isTest,
 } from '../util/environment';
+import {readQueryFromCache} from './queryCache';
 
 /**
  * The key which the cache id for a given value is stored in the result object. This key is private
@@ -48,6 +51,9 @@ export const ID_KEY = typeof Symbol !== 'undefined' ? Symbol('id') : '@@id';
 export type DiffResult = {
   result?: any;
   isMissing?: boolean;
+  wasCached?: boolean;
+  wasModified?: boolean;
+  queryCachePointers?: {[id: string]: {}[]};
 };
 
 export type ReadQueryOptions = {
@@ -58,11 +64,14 @@ export type ReadQueryOptions = {
   previousResult?: any,
   rootId?: string,
   config?: ApolloReducerConfig,
+  queryCache?: QueryCache,
+  cacheQueryId?: string,
+  returnOnlyQueryCacheData?: boolean,
+  allowModifiedQueryCache?: boolean,
 };
 
 export type DiffQueryAgainstStoreOptions = ReadQueryOptions & {
   returnPartialData?: boolean,
-  queryCachePointers?: {[id: string]: {}};
 };
 
 export type CustomResolver = (rootValue: any, args: { [argName: string]: any }) => any;
@@ -95,7 +104,7 @@ interface IdValueWithPreviousResult extends IdValue {
 /**
  * Resolves the result of a query solely from the store (i.e. never hits the server).
  *
- * @param {Store} store The {@link NormalizedCache} used by Apollo for the `data` portion of the
+ * @param {Cache} cache The {@link Cache} used by Apollo for the `cache` portion of the
  * store.
  *
  * @param {DocumentNode} query The query document to resolve from the data available in the store.
@@ -156,6 +165,8 @@ const readStoreResolver: Resolver = (
       throw new Error(`Can't find field ${storeKeyName} on object (${objId}) ${JSON.stringify(obj, null, 2)}.`);
     }
 
+    console.log('MISSING FIELD', obj, storeKeyName);
+
     context.hasMissingField = true;
 
     return fieldValue;
@@ -187,10 +198,18 @@ const readStoreResolver: Resolver = (
 /**
  * Given a store and a query, return as much of the result as possible and
  * identify if any data was missing from the store.
+ * @param store
  * @param  {DocumentNode} query A parsed GraphQL query document
- * @param  {Store} store The Apollo Client store object
+ * @param variables
  * @param  {any} previousResult The previous result returned by this function for the same query
- * @return {result: Object, isMissing: [boolean]}
+ * @param returnPartialData
+ * @param rootId
+ * @param fragmentMatcherFunction
+ * @param config
+ * @param queryCache
+ * @param cacheQueryId
+ * @param allowModifiedQueryCache
+ * @param returnOnlyQueryCacheData
  */
 export function diffQueryAgainstStore({
   store,
@@ -201,10 +220,40 @@ export function diffQueryAgainstStore({
   rootId = 'ROOT_QUERY',
   fragmentMatcherFunction,
   config,
-  queryCachePointers,
+  queryCache,
+  cacheQueryId,
+  allowModifiedQueryCache,
+  returnOnlyQueryCacheData = false,
 }: DiffQueryAgainstStoreOptions): DiffResult {
   // Throw the right validation error by trying to find a query in the document
   getQueryDefinition(query);
+
+  if (cacheQueryId && queryCache) {
+    const {result, modified} = readQueryFromCache({queryId: cacheQueryId, queryCache, variables, allowModified: allowModifiedQueryCache});
+    if (result) {
+      let name = (query as any).definitions[0].name ? (query as any).definitions[0].name.value : null;
+      console.log('CACHE HIT', name, queryCache);
+      // console.log('CACHE HIT');
+      return {
+        result: result,
+        isMissing: false,
+        wasCached: true,
+        wasModified: modified,
+      }
+    }
+  }
+
+  if (returnOnlyQueryCacheData) {
+    return {
+      result: null,
+      isMissing: true,
+      wasCached: false,
+    }
+  }
+
+  let name = (query as any).definitions[0].name ? (query as any).definitions[0].name.value : null;
+  console.log('CACHE MISS', name, queryCache, store);
+  // console.log('CACHE MISS');
 
   const context: ReadStoreContext = {
     // Global settings
@@ -222,14 +271,17 @@ export function diffQueryAgainstStore({
     previousResult,
   };
 
+  const queryCachePointers = {};
   const result = graphqlAnywhere(readStoreResolver, query, rootIdValue, context, variables, {
     fragmentMatcher: fragmentMatcherFunction,
-    resultMapper: queryCachePointers ? getResultMapperWithQueryCachePointers(queryCachePointers) : resultMapper,
+    resultMapper: getResultMapperWithQueryCachePointers(queryCachePointers, rootId),
   });
 
   return {
     result,
     isMissing: context.hasMissingField,
+    wasCached: false,
+    queryCachePointers: queryCachePointers,
   };
 }
 
@@ -341,10 +393,16 @@ function resultMapper (resultFields: any, idValue: IdValueWithPreviousResult) {
   return resultFields;
 }
 
-function getResultMapperWithQueryCachePointers (queryCachePointers: {[id: string]: {}}) {
+function getResultMapperWithQueryCachePointers (queryCachePointers: {[id: string]: {}[]}, rootId: string) {
   return (resultFields: any, idValue: IdValueWithPreviousResult) => {
     resultFields = resultMapper(resultFields, idValue);
-    queryCachePointers[idValue.id] = resultFields;
+    if (idValue.id !== rootId) {
+      if (!queryCachePointers[idValue.id]) {
+        queryCachePointers[idValue.id] = [];
+      }
+      queryCachePointers[idValue.id].push(resultFields);
+    }
+    return resultFields;
   };
 }
 

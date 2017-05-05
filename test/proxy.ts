@@ -675,7 +675,7 @@ describe('ReduxDataProxy', () => {
       });
     });
 
-    it('will write some data to the store with variables', () => {
+    it('will write some data to the store with variables2', () => {
       const proxy = createDataProxy();
 
       proxy.writeFragment({

@@ -35,6 +35,7 @@ export type OptimisticStoreItem = {
   mutationId: string,
   data: NormalizedCache,
   queryCache: QueryCache,
+  invalidatedQueryCacheIds: string[];
 };
 
 // a stack of patches of new or changed documents
@@ -47,10 +48,16 @@ export function getDataWithOptimisticResults(store: Store): Cache {
     return store.cache;
   }
 
-  return {
+  const cache = {
     data: assign({}, store.cache.data, ...store.optimistic.map(opt => opt.data)),
     queryCache: assign({}, store.cache.queryCache, ...store.optimistic.map(opt => opt.queryCache)),
   };
+
+  store.optimistic.map(opt => opt.invalidatedQueryCacheIds)
+    .reduce((result, array) => [...result, ...array], [])
+    .forEach(k => delete cache.queryCache[k]);
+
+  return cache;
 }
 
 export function optimistic(
@@ -70,6 +77,7 @@ export function optimistic(
       extraReducers: action.extraReducers,
       updateQueries: action.updateQueries,
       update: action.update,
+      storeUpdatePolicy: action.storeUpdatePolicy,
     };
 
     const optimisticData = getDataWithOptimisticResults({
@@ -125,6 +133,7 @@ function getOptimisticDataPatch (
   const patch: any = {
     data: {},
     queryCache: {},
+    invalidatedQueryCacheIds: []
   };
 
   Object.keys(optimisticData.data).forEach(key => {
@@ -137,6 +146,10 @@ function getOptimisticDataPatch (
     if (optimisticData.queryCache[key] !== previousData.queryCache[key]) {
       patch.queryCache[key] = optimisticData.queryCache[key];
     }
+  });
+
+  Object.keys(previousData.queryCache).forEach(key => {
+    !optimisticData.queryCache[key] && patch.invalidatedQueryCacheIds.push(key);
   });
 
   return patch;

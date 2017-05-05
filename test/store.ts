@@ -267,6 +267,7 @@ describe('createApolloStore', () => {
           data: {},
           queryCache: {},
           mutationId: '1',
+          invalidatedQueryCacheIds: [],
           action: {
             type: 'APOLLO_MUTATION_RESULT',
             result: {data: {data: {incrementer: {counter: 1}}}},

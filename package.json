@@ -32,7 +32,8 @@
     "postcoverage": "remap-istanbul --input coverage/coverage.json --type lcovonly --output coverage/lcov.info",
     "testonly": "mocha --reporter spec --full-trace lib/test/tests.js",
     "preanalyze": "npm run compile",
-    "analyze": "webpack -p --config analyze/webpack.config.js"
+    "analyze": "webpack -p --config analyze/webpack.config.js",
+    "sitedrive": "npm run compile && cp ./lib/apollo.umd.js ../sitedrive/web-app/node_modules/apollo-client/."
   },
   "repository": {
     "type": "git",

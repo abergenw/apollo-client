@@ -11,7 +11,7 @@ import {
 } from './writeToStore';
 
 import {
-  NormalizedCache,
+  Cache,
 } from './storeUtils';
 
 import {
@@ -39,10 +39,10 @@ export function createStoreReducer(
   config: ApolloReducerConfig,
 ): ApolloReducer {
 
-  return (store: NormalizedCache, action: ApolloAction) => {
+  return (store: Cache, action: ApolloAction) => {
 
     const { result, isMissing } = diffQueryAgainstStore({
-      store,
+      store: store.data,
       query: document,
       variables,
       returnPartialData: true,
@@ -69,10 +69,11 @@ export function createStoreReducer(
       return writeResultToStore({
         dataId: 'ROOT_QUERY',
         result: nextResult,
-        store,
+        store: store.data,
         document,
         variables,
         dataIdFromObject: config.dataIdFromObject,
+        queryCache: store.queryCache,
       });
     }
     return store;

@@ -379,6 +379,8 @@ export class TransactionDataProxy implements DataProxy {
       return null;
     }
 
+    console.log('READING', id, data, fragment, fragmentName);
+
     return readQueryFromStore<FragmentType>({
       rootId: id,
       store: data,

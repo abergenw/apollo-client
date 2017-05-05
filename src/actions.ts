@@ -5,6 +5,8 @@ import {
 
 import {
   MutationQueryReducer,
+  MutationStoreUpdatePolicy,
+  MutationQueryReducersMap,
 } from './data/mutationResults';
 
 import {
@@ -68,13 +70,29 @@ export function isQueryInitAction(action: ApolloAction): action is QueryInitActi
 export interface QueryResultClientAction {
   type: 'APOLLO_QUERY_RESULT_CLIENT';
   result: ExecutionResult;
+  variables: Object;
+  document: DocumentNode;
   complete: boolean;
   queryId: string;
   requestId: number;
+  shouldCache: boolean;
+  queryCachePointers: {[id: string]: {}[]};
 }
 
 export function isQueryResultClientAction(action: ApolloAction): action is QueryResultClientAction {
   return action.type === 'APOLLO_QUERY_RESULT_CLIENT';
+}
+
+export interface QueryCacheAction {
+  type: 'APOLLO_QUERY_CACHE';
+  result: ExecutionResult;
+  variables: Object;
+  queryId: string;
+  queryCachePointers: {[id: string]: {}[]};
+}
+
+export function isQueryCacheAction(action: ApolloAction): action is QueryCacheAction {
+  return action.type === 'APOLLO_QUERY_CACHE';
 }
 
 export interface QueryStopAction {
@@ -97,6 +115,7 @@ export interface MutationInitAction {
   extraReducers?: ApolloReducer[];
   updateQueries?: { [queryId: string]: MutationQueryReducer };
   update?: (proxy: DataProxy, mutationResult: Object) => void;
+  storeUpdatePolicy?: MutationStoreUpdatePolicy;
 }
 
 export function isMutationInitAction(action: ApolloAction): action is MutationInitAction {
@@ -112,9 +131,9 @@ export interface MutationResultAction {
   variables: Object;
   mutationId: string;
   extraReducers?: ApolloReducer[];
-  updateQueries?: { [queryId: string]: MutationQueryReducer };
+  updateQueries?: MutationQueryReducersMap;
   update?: (proxy: DataProxy, mutationResult: Object) => void;
-  resetStore?: boolean;
+  storeUpdatePolicy?: MutationStoreUpdatePolicy;
 }
 
 export function isMutationResultAction(action: ApolloAction): action is MutationResultAction {
@@ -136,6 +155,7 @@ export interface UpdateQueryResultAction {
   variables: any;
   document: DocumentNode;
   newResult: Object;
+  queryId: string;
 }
 
 export function isUpdateQueryResultAction(action: ApolloAction): action is UpdateQueryResultAction {
@@ -186,6 +206,7 @@ export type ApolloAction =
   QueryErrorAction |
   QueryInitAction |
   QueryResultClientAction |
+  QueryCacheAction |
   QueryStopAction |
   MutationInitAction |
   MutationResultAction |

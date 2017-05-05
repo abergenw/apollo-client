@@ -397,7 +397,17 @@ describe('client', () => {
     const finalState = { apollo: assign({}, initialState.apollo, {
       cache: {
         data: initialState.apollo.data,
-        queryCache: {},
+        queryCache: {
+          '1': {
+            dirty: false,
+            variables: {},
+            result: data,
+            pointers: {
+              'ROOT_QUERY.allPeople({"first":"1"}).people.0': [data.allPeople.people[0]],
+              'ROOT_QUERY.allPeople({"first":1})': [data.allPeople],
+            }
+          }
+        },
       },
       queries: {
         '1': {
@@ -425,7 +435,7 @@ describe('client', () => {
     return client.query({ query })
       .then((result) => {
         assert.deepEqual(result.data, data);
-        assert.deepEqual(finalState, client.store.getState());
+        assert.deepEqual(client.store.getState(), finalState);
       });
   });
 

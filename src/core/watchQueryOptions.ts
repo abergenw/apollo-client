@@ -24,7 +24,7 @@ import {
  * - network-only: return result from network, fail if network call doesn't succeed.
  */
 
-export type FetchPolicy = 'cache-first' | 'cache-and-network' | 'network-only' | 'cache-only';
+export type FetchPolicy = 'cache-first' | 'cache-and-network' | 'network-only' | 'cache-only' | 'do-not-execute';
 
 /**
  * We can change these options to an ObservableQuery

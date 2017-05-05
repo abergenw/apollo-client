@@ -12,6 +12,8 @@ import {
   resultKeyNameFromField,
   isField,
   isInlineFragment,
+  Cache,
+  QueryCache,
 } from './storeUtils';
 
 import {
@@ -37,6 +39,12 @@ import {
 import {
   shouldInclude,
 } from '../queries/directives';
+import {
+  invalidateQueryCache,
+  insertQueryToCache
+} from './queryCache';
+
+import {isEqual} from '../util/isEqual';
 
 /**
  * Writes the result of a query to the store.
@@ -56,8 +64,10 @@ import {
  * @param fragmentMap A map from the name of a fragment to its fragment definition. These fragments
  * can be referenced within the query document.
  *
- * @param updatedData
+ * @param queryCache
+ * @param cacheQueryId
  */
+let c = 0;
 export function writeQueryToStore({
   result,
   query,
@@ -65,7 +75,8 @@ export function writeQueryToStore({
   variables,
   dataIdFromObject,
   fragmentMap = {} as FragmentMap,
-  updatedData,
+  queryCache,
+  cacheQueryId,
 }: {
   result: Object,
   query: DocumentNode,
@@ -73,22 +84,48 @@ export function writeQueryToStore({
   variables?: Object,
   dataIdFromObject?: IdGetter,
   fragmentMap?: FragmentMap,
-  updatedData?: {[id: string]: {}};
-}): NormalizedCache {
+  queryCache?: QueryCache,
+  cacheQueryId?: string,
+}): Cache {
   const queryDefinition: OperationDefinitionNode = getQueryDefinition(query);
 
-  return writeSelectionSetToStore({
-    dataId: 'ROOT_QUERY',
+  const queryCachePointers = cacheQueryId ? {} : undefined;
+  const updatedKeys = {};
+
+  c = 0;
+  store = writeSelectionSetToStore({
     result,
+    dataId: 'ROOT_QUERY',
     selectionSet: queryDefinition.selectionSet,
     context: {
-      store,
+      store: store as NormalizedCache,
       variables,
       dataIdFromObject,
       fragmentMap,
-      updatedData
+      queryCachePointers,
+      updatedKeys
     },
   });
+
+  console.log('SKIPPING PROCESSED COUNT', c, store);
+
+  if (queryCache) {
+    if (cacheQueryId) {
+      return insertQueryToCache({
+        queryId: cacheQueryId,
+        result,
+        variables,
+        store,
+        queryCache,
+        queryCachePointers: queryCachePointers as any,
+        updatedKeys
+      });
+    }
+
+    return invalidateQueryCache({store, queryCache, updatedKeys});
+  }
+
+  return { data: store, queryCache: {} };
 }
 
 export type WriteContext = {
@@ -96,17 +133,19 @@ export type WriteContext = {
   variables?: any;
   dataIdFromObject?: IdGetter;
   fragmentMap?: FragmentMap;
-  updatedData?: {[id: string]: {}};
+  queryCachePointers?: {[id: string]: {}[]};
+  updatedKeys?: {[id: string]: any};
 };
 
 export function writeResultToStore({
   result,
   dataId,
   document,
-  store = {} as NormalizedCache,
+  store,
   variables,
   dataIdFromObject,
-  updatedData,
+  queryCache,
+  cacheQueryId,
 }: {
   dataId: string,
   result: any,
@@ -114,35 +153,63 @@ export function writeResultToStore({
   store?: NormalizedCache,
   variables?: Object,
   dataIdFromObject?: IdGetter,
-  updatedData?: {[id: string]: {}};
-}): NormalizedCache {
+  queryCache?: QueryCache,
+  cacheQueryId?: string,
+}): Cache {
 
   // XXX TODO REFACTOR: this is a temporary workaround until query normalization is made to work with documents.
   const selectionSet = getOperationDefinition(document).selectionSet;
   const fragmentMap = createFragmentMap(getFragmentDefinitions(document));
 
-  return writeSelectionSetToStore({
+  const queryCachePointers = cacheQueryId ? {} : undefined;
+  const updatedKeys = {};
+
+  c = 0;
+  store = writeSelectionSetToStore({
     result,
     dataId,
     selectionSet,
     context: {
-      store,
+      store: store as NormalizedCache,
       variables,
       dataIdFromObject,
       fragmentMap,
-      updatedData
+      queryCachePointers,
+      updatedKeys,
     },
   });
+
+  console.log('SKIPPING PROCESSED COUNT', c, store);
+
+  if (queryCache) {
+    if (cacheQueryId) {
+      return insertQueryToCache({
+        queryId: cacheQueryId,
+        result,
+        variables,
+        store,
+        queryCache,
+        queryCachePointers: queryCachePointers as any,
+        updatedKeys
+      });
+    }
+
+    return invalidateQueryCache({store, queryCache, updatedKeys});
+  }
+
+  return {data: store, queryCache: {}};
 }
 
 export function writeSelectionSetToStore({
   result,
   dataId,
+  processedDataIds = {},
   selectionSet,
   context,
 }: {
-  dataId: string,
   result: any,
+  dataId: string,
+  processedDataIds?: {[x: string]: FieldNode[]},
   selectionSet: SelectionSetNode,
   context: WriteContext,
 }): NormalizedCache {
@@ -158,6 +225,7 @@ export function writeSelectionSetToStore({
       if (value !== undefined) {
         writeFieldToStore({
           dataId,
+          processedDataIds,
           value,
           field: selection,
           context,
@@ -168,8 +236,9 @@ export function writeSelectionSetToStore({
         // XXX what to do if this tries to write the same fields? Also, type conditions...
         writeSelectionSetToStore({
           result,
-          selectionSet: selection.selectionSet,
           dataId,
+          processedDataIds,
+          selectionSet: selection.selectionSet,
           context,
         });
       }
@@ -191,8 +260,9 @@ export function writeSelectionSetToStore({
       if (included) {
         writeSelectionSetToStore({
           result,
-          selectionSet: fragment.selectionSet,
           dataId,
+          processedDataIds,
+          selectionSet: fragment.selectionSet,
           context,
         });
       }
@@ -230,13 +300,18 @@ function writeFieldToStore({
   field,
   value,
   dataId,
+  processedDataIds,
   context,
 }: {
   field: FieldNode,
   value: any,
   dataId: string,
+  processedDataIds: {[x: string]: FieldNode[]},
   context: WriteContext,
 }) {
+    // console.log('WRITING DATA ID AND VALUE');
+    // console.log(JSON.stringify(dataId, null, 2));
+  // console.log(JSON.stringify(value, null, 2));
   const { variables, dataIdFromObject, store, fragmentMap } = context;
 
   let storeValue: any;
@@ -259,7 +334,7 @@ function writeFieldToStore({
   } else if (Array.isArray(value)) {
     const generatedId = `${dataId}.${storeFieldName}`;
 
-    storeValue = processArrayValue(value, generatedId, field.selectionSet, context);
+    storeValue = processArrayValue(value, generatedId, processedDataIds, field.selectionSet, context);
   } else {
     // It's an object
     let valueDataId = `${dataId}.${storeFieldName}`;
@@ -288,12 +363,30 @@ function writeFieldToStore({
       }
     }
 
-    writeSelectionSetToStore({
-      dataId: valueDataId,
-      result: value,
-      selectionSet: field.selectionSet,
-      context,
-    });
+    let isProcessed = false;
+    if (processedDataIds[valueDataId]) {
+      if (processedDataIds[valueDataId].indexOf(field) >= 0) {
+        isProcessed = true;
+        // console.log('SKIPPING WRITING OF', valueDataId, processedDataIds[valueDataId].length, value);
+        c++;
+      }
+      else {
+        processedDataIds[valueDataId].push(field);
+      }
+    }
+    else {
+      processedDataIds[valueDataId] = [field];
+    }
+
+    if (!isProcessed) {
+      writeSelectionSetToStore({
+        result: value,
+        dataId: valueDataId,
+        processedDataIds,
+        selectionSet: field.selectionSet,
+        context,
+      });
+    }
 
     // We take the id and escape it (i.e. wrap it with an enclosing object).
     // This allows us to distinguish IDs from normal scalars.
@@ -322,6 +415,13 @@ function writeFieldToStore({
         shouldMerge = true;
       }
     }
+
+    if (context.queryCachePointers) {
+      if (!context.queryCachePointers[valueDataId]) {
+        context.queryCachePointers[valueDataId] = [];
+      }
+      context.queryCachePointers[valueDataId].push(value);
+    }
   }
 
   const newStoreObj = {
@@ -333,11 +433,15 @@ function writeFieldToStore({
     mergeWithGenerated(generatedKey, (storeValue as IdValue).id, store);
   }
 
-  if (!store[dataId] || storeValue !== store[dataId][storeFieldName]) {
+  if (!store[dataId] || store[dataId][storeFieldName] === undefined) {
+    store[dataId] = newStoreObj;
+  }
+  else if (!isEqual(store[dataId][storeFieldName], storeValue)) {
+    console.log('DIFFERING!', store[dataId][storeFieldName], storeValue);
     store[dataId] = newStoreObj;
 
-    if (context.updatedData) {
-      context.updatedData[dataId] = newStoreObj;
+    if (context.updatedKeys && dataId !== 'ROOT_QUERY') {
+      context.updatedKeys[dataId] = true;
     }
   }
 }
@@ -345,6 +449,7 @@ function writeFieldToStore({
 function processArrayValue(
   value: any[],
   generatedId: string,
+  processedDataIds: {[x: string]: FieldNode[]},
   selectionSet: SelectionSetNode,
   context: WriteContext,
 ): any[] {
@@ -356,7 +461,7 @@ function processArrayValue(
     let itemDataId = `${generatedId}.${index}`;
 
     if (Array.isArray(item)) {
-      return processArrayValue(item, itemDataId, selectionSet, context);
+      return processArrayValue(item, itemDataId, processedDataIds, selectionSet, context);
     }
 
     let generated = true;
@@ -370,18 +475,40 @@ function processArrayValue(
       }
     }
 
-    writeSelectionSetToStore({
-      dataId: itemDataId,
-      result: item,
-      selectionSet,
-      context,
-    });
+    if (context.queryCachePointers) {
+      if (!context.queryCachePointers[itemDataId]) {
+        context.queryCachePointers[itemDataId] = [];
+      }
+      context.queryCachePointers[itemDataId].push(item);
+    }
 
     const idStoreValue: IdValue = {
       type: 'id',
       id: itemDataId,
       generated,
     };
+
+    if (processedDataIds[itemDataId]) {
+      if (processedDataIds[itemDataId].indexOf(item) >= 0) {
+        // console.log('SKIPPING WRITING OF', itemDataId, processedDataIds[itemDataId].length, item);
+        c++;
+        return idStoreValue;
+      }
+      else {
+        processedDataIds[itemDataId].push(item);
+      }
+    }
+    else {
+      processedDataIds[itemDataId] = [item];
+    }
+
+    writeSelectionSetToStore({
+      result: item,
+      dataId: itemDataId,
+      processedDataIds,
+      selectionSet,
+      context,
+    });
 
     return idStoreValue;
   });

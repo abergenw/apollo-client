@@ -47,7 +47,7 @@ describe('writing to the store', () => {
     assert.deepEqual(writeQueryToStore({
       query,
       result: cloneDeep(result),
-    }), {
+    }).data, {
       'ROOT_QUERY': result,
     });
   });
@@ -72,7 +72,7 @@ describe('writing to the store', () => {
     const normalized = writeQueryToStore({
       result,
       query,
-    });
+    }).data;
 
     assert.deepEqual(normalized, {
       'ROOT_QUERY': {
@@ -106,7 +106,7 @@ describe('writing to the store', () => {
     const normalized = writeQueryToStore({
       result,
       query,
-    });
+    }).data;
 
     assert.deepEqual(normalized, {
       'ROOT_QUERY': {
@@ -146,7 +146,7 @@ describe('writing to the store', () => {
       result,
       query,
       variables,
-    });
+    }).data;
 
     assert.deepEqual(normalized, {
       'ROOT_QUERY': {
@@ -191,7 +191,7 @@ describe('writing to the store', () => {
       query,
       result: cloneDeep(result),
       dataIdFromObject: getIdField,
-    }), {
+    }).data, {
       'ROOT_QUERY': assign({}, assign({}, omit(result, 'nestedObj')), {
         nestedObj: {
           type: 'id',
@@ -233,7 +233,7 @@ describe('writing to the store', () => {
     assert.deepEqual(writeQueryToStore({
       query,
       result: cloneDeep(result),
-    }), {
+    }).data, {
       'ROOT_QUERY': assign({}, assign({}, omit(result, 'nestedObj')), {
         nestedObj: {
           type: 'id',
@@ -275,7 +275,7 @@ describe('writing to the store', () => {
     assert.deepEqual(writeQueryToStore({
       query,
       result: cloneDeep(result),
-    }), {
+    }).data, {
       'ROOT_QUERY': assign({}, assign({}, omit(result, 'nestedObj')), {
         'nestedObj({"arg":"val"})': {
           type: 'id',
@@ -328,7 +328,7 @@ describe('writing to the store', () => {
       query,
       result: cloneDeep(result),
       dataIdFromObject: getIdField,
-    }), {
+    }).data, {
       'ROOT_QUERY': assign({}, assign({}, omit(result, 'nestedArray')), {
         nestedArray: result.nestedArray.map((obj: any) => ({
           type: 'id',
@@ -377,7 +377,7 @@ describe('writing to the store', () => {
       query,
       result: cloneDeep(result),
       dataIdFromObject: getIdField,
-    }), {
+    }).data, {
       'ROOT_QUERY': assign({}, assign({}, omit(result, 'nestedArray')), {
         nestedArray: [
           { type: 'id', id: result.nestedArray[0].id, generated: false },
@@ -425,7 +425,7 @@ describe('writing to the store', () => {
     const normalized = writeQueryToStore({
       query,
       result: cloneDeep(result),
-    });
+    }).data;
 
     assert.deepEqual(normalized, {
       'ROOT_QUERY': assign({}, assign({}, omit(result, 'nestedArray')), {
@@ -472,7 +472,7 @@ describe('writing to the store', () => {
     const normalized = writeQueryToStore({
       query,
       result: cloneDeep(result),
-    });
+    }).data;
 
     assert.deepEqual(normalized, {
       'ROOT_QUERY': assign({}, assign({}, omit(result, 'nestedArray')), {
@@ -508,7 +508,7 @@ describe('writing to the store', () => {
       query,
       result: cloneDeep(result),
       dataIdFromObject: getIdField,
-    });
+    }).data;
 
     assert.deepEqual(normalized, {
       'ROOT_QUERY': assign({}, assign({}, omit(result, 'simpleArray')), {
@@ -546,7 +546,7 @@ describe('writing to the store', () => {
     const normalized = writeQueryToStore({
       query,
       result: cloneDeep(result),
-    });
+    }).data;
 
     assert.deepEqual(normalized, {
       'ROOT_QUERY': assign({}, assign({}, omit(result, 'simpleArray')), {
@@ -563,7 +563,7 @@ describe('writing to the store', () => {
   });
 
   it('merges node containing array with ids and different order', () => {
-    const query = gql`
+    let query = gql`
       {
         id
         array {
@@ -591,9 +591,9 @@ describe('writing to the store', () => {
       query,
       result: cloneDeep(result),
       dataIdFromObject: getIdField,
-    });
+    }).data;
 
-    const query = gql`
+    query = gql`
       {
         id
         array {
@@ -625,7 +625,7 @@ describe('writing to the store', () => {
       query: query,
       result: result2,
       dataIdFromObject: getIdField,
-    });
+    }).data;
 
     assert.deepEqual(store2, {
       'ROOT_QUERY': {
@@ -680,7 +680,7 @@ describe('writing to the store', () => {
       query,
       result: cloneDeep(result),
       dataIdFromObject: getIdField,
-    });
+    }).data;
 
     const query2 = gql`
       {
@@ -709,7 +709,7 @@ describe('writing to the store', () => {
       query: query2,
       result: result2,
       dataIdFromObject: getIdField,
-    });
+    }).data;
 
     assert.deepEqual(store2, {
       'ROOT_QUERY': {
@@ -764,7 +764,7 @@ describe('writing to the store', () => {
     assert.deepEqual(writeQueryToStore({
       query,
       result: cloneDeep(result),
-    }), {
+    }).data, {
       'ROOT_QUERY': assign({}, assign({}, omit(result, 'nestedObj')), {
         nestedObj: null,
       }),
@@ -791,7 +791,7 @@ describe('writing to the store', () => {
     assert.deepEqual(writeQueryToStore({
       query,
       result: cloneDeep(result),
-    }), {
+    }).data, {
       'ROOT_QUERY': {
         'people_one({"id":"5"})': {
           type: 'id',
@@ -979,7 +979,7 @@ describe('writing to the store', () => {
       assert.deepEqual(writeQueryToStore({
         result: data,
         query,
-      }), expStore);
+      }).data, expStore);
     });
 
     it('should correctly escape real ids', () => {
@@ -1016,7 +1016,7 @@ describe('writing to the store', () => {
         result: data,
         query,
         dataIdFromObject,
-      }), expStore);
+      }).data, expStore);
     });
 
     it('should correctly escape json blobs', () => {
@@ -1058,7 +1058,7 @@ describe('writing to the store', () => {
         result: data,
         query,
         dataIdFromObject,
-      }), expStore);
+      }).data, expStore);
     });
   });
 
@@ -1130,14 +1130,14 @@ describe('writing to the store', () => {
       result: dataWithoutId,
       query: queryWithoutId,
       dataIdFromObject,
-    });
+    }).data;
     assert.deepEqual(storeWithoutId, expStoreWithoutId);
     const storeWithId = writeQueryToStore({
       result: dataWithId,
       query: queryWithId,
       store: storeWithoutId,
       dataIdFromObject,
-    });
+    }).data;
     assert.deepEqual(storeWithId, expStoreWithId);
   });
 
@@ -1177,13 +1177,13 @@ describe('writing to the store', () => {
     const store = writeQueryToStore({
       query,
       result: cloneDeep(result),
-    });
+    }).data;
 
     const newStore = writeQueryToStore({
       query,
       result: cloneDeep(result),
       store: assign({}, store) as NormalizedCache,
-    });
+    }).data;
 
     Object.keys(store).forEach((field) => {
       assert.equal(store[field], newStore[field], 'references are the same');
