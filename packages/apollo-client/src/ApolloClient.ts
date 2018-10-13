@@ -439,7 +439,10 @@ export default class ApolloClient<TCacheShape> implements DataProxy {
    * re-execute any queries then you should make sure to stop watching any
    * active queries.
    */
-  public resetStore(): Promise<ApolloQueryResult<any>[] | null> {
+  public resetStore(
+    includeStandby?: boolean,
+    resetLastResults: boolean = true,
+  ): Promise<ApolloQueryResult<any>[] | null> {
     return Promise.resolve()
       .then(() => {
         return this.queryManager
@@ -449,7 +452,10 @@ export default class ApolloClient<TCacheShape> implements DataProxy {
       .then(() => Promise.all(this.resetStoreCallbacks.map(fn => fn())))
       .then(() => {
         return this.queryManager && this.queryManager.reFetchObservableQueries
-          ? this.queryManager.reFetchObservableQueries()
+          ? this.queryManager.reFetchObservableQueries(
+              includeStandby,
+              resetLastResults,
+            )
           : Promise.resolve(null);
       });
   }
@@ -491,9 +497,13 @@ export default class ApolloClient<TCacheShape> implements DataProxy {
    */
   public reFetchObservableQueries(
     includeStandby?: boolean,
+    resetLastResults: boolean = true,
   ): Promise<ApolloQueryResult<any>[]> | Promise<null> {
     return this.queryManager
-      ? this.queryManager.reFetchObservableQueries(includeStandby)
+      ? this.queryManager.reFetchObservableQueries(
+          includeStandby,
+          resetLastResults,
+        )
       : Promise.resolve(null);
   }
 

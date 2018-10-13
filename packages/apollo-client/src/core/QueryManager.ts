@@ -852,10 +852,11 @@ export class QueryManager<TStore> {
 
   public reFetchObservableQueries(
     includeStandby?: boolean,
+    resetLastResults: boolean = true,
   ): Promise<ApolloQueryResult<any>[]> {
     const observableQueryPromises: Promise<
       ApolloQueryResult<any>
-    >[] = this.getObservableQueryPromises(includeStandby);
+    >[] = this.getObservableQueryPromises(includeStandby, resetLastResults);
 
     this.broadcastQueries();
 
@@ -1045,13 +1046,15 @@ export class QueryManager<TStore> {
 
   private getObservableQueryPromises(
     includeStandby?: boolean,
+    resetLastResults: boolean = true,
   ): Promise<ApolloQueryResult<any>>[] {
     const observableQueryPromises: Promise<ApolloQueryResult<any>>[] = [];
     this.queries.forEach(({ observableQuery }, queryId) => {
       if (!observableQuery) return;
       const fetchPolicy = observableQuery.options.fetchPolicy;
 
-      observableQuery.resetLastResults();
+      resetLastResults && observableQuery.resetLastResults();
+
       if (
         fetchPolicy !== 'cache-only' &&
         (includeStandby || fetchPolicy !== 'standby')
