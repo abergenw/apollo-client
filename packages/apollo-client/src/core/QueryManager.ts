@@ -305,6 +305,7 @@ export class QueryManager<TStore> {
     // call for another query. We need this data to compute the `fetchMore`
     // network status for the query this is fetching for.
     fetchMoreForQueryId?: string,
+    lastResult?: ApolloQueryResult<T>,
   ): Promise<FetchResult<T>> {
     const {
       variables = {},
@@ -393,6 +394,7 @@ export class QueryManager<TStore> {
         document: query,
         options,
         fetchMoreForQueryId,
+        lastResult,
       }).catch(error => {
         // This is for the benefit of `refetch` promises, which currently don't get their errors
         // through the store like watchQuery observers do
@@ -1078,12 +1080,14 @@ export class QueryManager<TStore> {
     document,
     options,
     fetchMoreForQueryId,
+    lastResult,
   }: {
     requestId: number;
     queryId: string;
     document: DocumentNode;
     options: WatchQueryOptions;
     fetchMoreForQueryId?: string;
+    lastResult?: ApolloQueryResult<T>;
   }): Promise<ExecutionResult> {
     const { variables, context, errorPolicy = 'none', fetchPolicy } = options;
     const operation = this.buildOperationForLink(document, variables, {
@@ -1155,6 +1159,7 @@ export class QueryManager<TStore> {
                 variables,
                 query: document,
                 optimistic: false,
+                previousResult: lastResult ? lastResult.data : undefined,
               });
               // this will throw an error if there are missing fields in
               // the results which can happen with errors from the server.
