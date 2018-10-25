@@ -966,8 +966,21 @@ export class QueryManager<TStore> {
   }
 
   public removeQuery(queryId: string) {
-    const { subscriptions } = this.getQuery(queryId);
+    const { subscriptions, lastRequestId } = this.getQuery(queryId);
     // teardown all links
+
+    if (lastRequestId != null) {
+      const fetchQueryPromise = this.fetchQueryPromises.get(
+        lastRequestId.toString(),
+      );
+      if (fetchQueryPromise) {
+        this.removeFetchQueryPromise(lastRequestId);
+        fetchQueryPromise.reject(
+          new Error('fetchQueryPromise rejected because query was removed'),
+        );
+      }
+    }
+
     subscriptions.forEach(x => x.unsubscribe());
     this.queries.delete(queryId);
   }
@@ -1220,15 +1233,17 @@ export class QueryManager<TStore> {
   }
 
   private getQuery(queryId: string) {
-    return this.queries.get(queryId) || {
-      listeners: [],
-      invalidated: false,
-      document: null,
-      newData: null,
-      lastRequestId: null,
-      observableQuery: null,
-      subscriptions: [],
-    };
+    return (
+      this.queries.get(queryId) || {
+        listeners: [],
+        invalidated: false,
+        document: null,
+        newData: null,
+        lastRequestId: null,
+        observableQuery: null,
+        subscriptions: [],
+      }
+    );
   }
 
   private setQuery(queryId: string, updater: (prev: QueryInfo) => any) {
