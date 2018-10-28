@@ -862,7 +862,7 @@ export class QueryManager<TStore> {
 
     this.broadcastQueries();
 
-    return Promise.all(observableQueryPromises);
+    return Promise.all(observableQueryPromises.map(p => p.catch(e => e)));
   }
 
   public startQuery<T>(
